@@ -3,11 +3,14 @@ import RoomCard from '../../components/RoomCard';
 import RoomHistoryModal from '../../components/RoomHistoryModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { roomService, hostelService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
-import { RefreshCw, Search, History } from 'lucide-react';
+import { RefreshCw, Search, History, Building2, Bed, Layers, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Rooms() {
+  const navigate = useNavigate();
   const { selectedHostelId, selectedHostel } = useBuilding();
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -35,8 +38,8 @@ export default function Rooms() {
           name: f.name,
           rooms: floorRooms.map((r) => {
             const bedList = r.beds || [
-              { id: 'B1', status: 'Available' },
-              { id: 'B2', status: 'Available' }
+              { id: 'B1', bedNumber: 1, status: 'Available' },
+              { id: 'B2', bedNumber: 2, status: 'Available' }
             ];
             const occupiedCount = bedList.filter((b) => b.status === 'Occupied' || b.tenant).length;
             return {
@@ -66,6 +69,11 @@ export default function Rooms() {
     setIsHistoryModalOpen(true);
   };
 
+  // Stats calculation
+  const totalRooms = floors.reduce((acc, f) => acc + f.rooms.length, 0);
+  const totalBeds = floors.reduce((acc, f) => acc + f.rooms.reduce((ra, r) => ra + r.capacity, 0), 0);
+  const totalOccupied = floors.reduce((acc, f) => acc + f.rooms.reduce((ra, r) => ra + r.occupied, 0), 0);
+
   return (
     <div className="space-y-6 animate-in fade-in pb-20">
       <RoomHistoryModal
@@ -77,52 +85,89 @@ export default function Rooms() {
         }}
       />
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      {/* Header Toolbar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border/60">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Rooms & Beds</h2>
-          <p className="text-muted-foreground">
-            {selectedHostel?.name || 'All Buildings'} • Manage occupancy, allocations & room history
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              Rooms & Bed Allocations
+            </h1>
+            <Badge variant="secondary" className="font-semibold text-xs rounded-full px-2.5 py-0.5">
+              {totalRooms} Rooms • {totalBeds} Beds
+            </Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            {selectedHostel?.name || 'All Buildings'} • Floor layouts, room occupancies, and resident bed mapping
           </p>
         </div>
         
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={fetchRoomData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={fetchRoomData} 
+            disabled={loading}
+            className="h-9 rounded-lg text-xs gap-2 bg-card"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Sync</span>
           </Button>
-          <div className="flex bg-muted p-1 rounded-lg">
-            <Button 
-              variant={filter === 'All' ? 'default' : 'ghost'} 
-              size="sm"
-              onClick={() => setFilter('All')}
-            >
-              All Beds
-            </Button>
-            <Button 
-              variant={filter === 'Vacant' ? 'default' : 'ghost'} 
-              size="sm"
-              onClick={() => setFilter('Vacant')}
-            >
-              Vacant Only
-            </Button>
-          </div>
+
+          <Button 
+            size="sm" 
+            onClick={() => navigate('/tenants/add')} 
+            className="h-9 rounded-lg text-xs gap-2 font-semibold shadow-sm flex-1 sm:flex-none"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Assign Resident</span>
+          </Button>
         </div>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search room number..."
-          className="pl-9 bg-card"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search room number (e.g. 101, 202)..."
+            className="pl-9 h-9 rounded-xl text-xs bg-card border-border/80"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="flex bg-muted/60 p-1 rounded-xl gap-1 w-full sm:w-auto">
+          <Button 
+            variant={filter === 'All' ? 'secondary' : 'ghost'} 
+            size="sm"
+            onClick={() => setFilter('All')}
+            className="flex-1 sm:flex-none h-8 text-xs px-3 rounded-lg font-medium"
+          >
+            All Beds ({totalBeds})
+          </Button>
+          <Button 
+            variant={filter === 'Vacant' ? 'secondary' : 'ghost'} 
+            size="sm"
+            onClick={() => setFilter('Vacant')}
+            className="flex-1 sm:flex-none h-8 text-xs px-3 rounded-lg font-medium text-emerald-600"
+          >
+            Vacant Only ({totalBeds - totalOccupied})
+          </Button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="p-12 text-center text-muted-foreground font-medium">Loading rooms from server...</div>
+        <div className="p-16 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+          <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+          <span>Loading room allocations and floor plans...</span>
+        </div>
       ) : floors.length === 0 ? (
-        <div className="p-12 text-center border rounded-lg bg-card text-muted-foreground">
-          No floors or rooms set up yet for {selectedHostel?.name || 'this property'}.
+        <div className="p-16 text-center border rounded-2xl bg-card text-muted-foreground flex flex-col items-center gap-3">
+          <div className="p-4 rounded-2xl bg-muted/50 text-muted-foreground">
+            <Layers className="h-8 w-8" />
+          </div>
+          <p className="font-semibold text-foreground text-sm">No floors or rooms set up yet</p>
+          <p className="text-xs max-w-sm">No rooms found for {selectedHostel?.name || 'this property'}.</p>
         </div>
       ) : (
         <div className="space-y-8">
@@ -137,16 +182,21 @@ export default function Rooms() {
 
             return (
               <div key={floor.id} className="space-y-4">
-                <h3 className="text-lg font-semibold border-b pb-2 flex items-center justify-between">
-                  <span>{floor.name}</span>
-                  <span className="text-xs text-muted-foreground font-normal">
+                <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-primary" />
+                    <h2 className="text-base font-bold text-foreground tracking-tight">
+                      {floor.name}
+                    </h2>
+                  </div>
+                  <span className="text-xs font-semibold text-muted-foreground bg-muted px-2.5 py-0.5 rounded-full">
                     {visibleRooms.length} {visibleRooms.length === 1 ? 'Room' : 'Rooms'}
                   </span>
-                </h3>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {visibleRooms.map((room) => (
-                    <div key={room.id} className="relative group">
+                    <div key={room.id} className="relative group flex flex-col">
                       <RoomCard
                         roomNumber={room.roomNumber}
                         capacity={room.capacity}
@@ -154,14 +204,6 @@ export default function Rooms() {
                         beds={room.beds}
                         onOpenRoom={() => handleOpenRoomHistory(room.id)}
                       />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => handleOpenRoomHistory(room.id)}
-                        className="w-full mt-2 text-xs flex items-center justify-center gap-1.5 border"
-                      >
-                        <History className="h-3.5 w-3.5" /> View Room History
-                      </Button>
                     </div>
                   ))}
                 </div>

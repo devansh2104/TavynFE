@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="tavynGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#3730A3" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#tavynGrad)" />
+  <polygon points="66,77 446,77 408,132.5 283.8,132.5 282.3,435 213.6,321 213.6,132.5 104,132.5" fill="#FFFFFF" />
+</svg>

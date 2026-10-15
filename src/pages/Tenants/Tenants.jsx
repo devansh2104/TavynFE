@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Plus, RefreshCw } from 'lucide-react';
+import { Search, Plus, RefreshCw, Users, CreditCard, Shield, Phone, Mail, MoreHorizontal, Bed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { tenantService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
@@ -49,29 +54,51 @@ export default function Tenants() {
 
   return (
     <div className="space-y-6 animate-in fade-in pb-20">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      
+      {/* Header Toolbar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border/60">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Tenants</h2>
-          <p className="text-muted-foreground">
-            {selectedHostel?.name || 'All Properties'} • Manage active residents, tenure, and financial terms
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              Residents Directory
+            </h1>
+            <Badge variant="secondary" className="font-semibold text-xs rounded-full px-2.5 py-0.5">
+              {totalRecords} Enrolled
+            </Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            {selectedHostel?.name || 'All Properties'} • Manage active residents, tenure, room assignments, and financial terms
           </p>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-          <Button variant="ghost" size="icon" onClick={fetchTenants} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={fetchTenants} 
+            disabled={loading}
+            className="h-9 rounded-lg text-xs gap-2 bg-card"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Sync</span>
           </Button>
-          <Button onClick={() => navigate('/tenants/add')} className="flex-1 sm:flex-none">
-            <Plus className="mr-2 h-4 w-4" /> Add Tenant
+          <Button 
+            size="sm" 
+            onClick={() => navigate('/tenants/add')} 
+            className="h-9 rounded-lg text-xs gap-2 font-semibold shadow-sm flex-1 sm:flex-none"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Resident</span>
           </Button>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+      {/* Filter & Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input 
-            placeholder="Search tenant name or phone number..." 
-            className="pl-9 bg-card" 
+            placeholder="Search by resident name or phone..." 
+            className="pl-9 h-9 rounded-xl text-xs bg-card border-border/80" 
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -80,77 +107,241 @@ export default function Tenants() {
             onKeyDown={(e) => e.key === 'Enter' && fetchTenants()}
           />
         </div>
-        <div className="flex bg-muted p-1 rounded-lg overflow-x-auto">
+        
+        {/* Status Filter Pills */}
+        <div className="flex bg-muted/60 p-1 rounded-xl gap-1">
           {['All', 'Active', 'CheckedOut'].map((f) => (
             <Button 
               key={f}
-              variant={filter === f ? 'default' : 'ghost'} 
+              variant={filter === f ? 'secondary' : 'ghost'} 
               size="sm"
               onClick={() => {
                 setFilter(f);
                 setPage(1);
               }}
-              className="whitespace-nowrap"
+              className="h-8 text-xs px-3 rounded-lg font-medium whitespace-nowrap"
             >
-              {f}
+              {f === 'CheckedOut' ? 'Checked Out' : f}
             </Button>
           ))}
         </div>
       </div>
 
-      {loading ? (
-        <div className="p-12 text-center text-muted-foreground">Loading tenants from server...</div>
-      ) : tenants.length === 0 ? (
-        <div className="p-12 text-center border rounded-lg bg-card text-muted-foreground">
-          No tenants found for {selectedHostel?.name || 'this property'}. Click "Add Tenant" to enroll your first resident.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {tenants.map((t) => (
-            <div 
-              key={t.id} 
-              className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-card rounded-lg border hover:border-primary/50 transition-colors gap-4"
-            >
-              <div>
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  {t.name}
-                  {t.bed?.room?.roomNumber && (
-                    <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                      Room {t.bed.room.roomNumber} (Bed {t.bed.bedNumber})
-                    </span>
-                  )}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Phone: {t.phone} • Rent: ₹{(t.rentAmount || 0).toLocaleString()}
-                </p>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
-                  <span>Deposit: ₹{(t.securityDeposit || 0).toLocaleString()}</span>
-                  <span>Maintenance: ₹{(t.maintenanceFee || 0).toLocaleString()}/mo</span>
-                  <span>Tenure: {t.tenureMonths || 11} mo</span>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                <div className="text-right">
-                  <p className="font-bold text-base">₹{(t.rentAmount || 0).toLocaleString()}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                  <p className={`text-xs font-semibold ${
-                    t.status === 'Active' ? 'text-success' : 'text-muted-foreground'
-                  }`}>
-                    {t.status}
-                  </p>
-                </div>
-                
-                <Button 
-                  variant="outline" 
-                  onClick={() => navigate('/rent')} 
-                  className="border-primary text-primary hover:bg-primary hover:text-white"
-                >
-                  Collect
-                </Button>
-              </div>
+      {/* Modern Shadcn Table Card */}
+      <Card className="rounded-xl border border-border/80 bg-card shadow-sm overflow-hidden">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-16 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+              <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+              <span>Loading resident profiles from database...</span>
             </div>
-          ))}
+          ) : tenants.length === 0 ? (
+            <div className="p-16 text-center text-muted-foreground flex flex-col items-center gap-3">
+              <div className="p-4 rounded-2xl bg-muted/50 text-muted-foreground">
+                <Users className="h-8 w-8" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold text-foreground text-sm">No residents found</p>
+                <p className="text-xs max-w-sm text-muted-foreground">
+                  No records match your search or filter. You can enroll your first resident now.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => navigate('/tenants/add')} className="rounded-lg text-xs mt-2">
+                <Plus className="mr-1.5 h-3.5 w-3.5" /> Enroll New Resident
+              </Button>
+            </div>
+          ) : (
+            <>
+              {/* DESKTOP TABLE VIEW */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-xs font-semibold py-3 pl-6">Resident</TableHead>
+                      <TableHead className="text-xs font-semibold py-3">Allocated Bed</TableHead>
+                      <TableHead className="text-xs font-semibold py-3">Monthly Rent</TableHead>
+                      <TableHead className="text-xs font-semibold py-3">Deposit / Tenure</TableHead>
+                      <TableHead className="text-xs font-semibold py-3">Status</TableHead>
+                      <TableHead className="text-xs font-semibold py-3 pr-6 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tenants.map((t) => (
+                      <TableRow key={t.id} className="hover:bg-muted/30 transition-colors">
+                        <TableCell className="py-3.5 pl-6">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-9 w-9 rounded-xl border border-border/60">
+                              <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.name}`} />
+                              <AvatarFallback className="rounded-xl bg-primary/10 text-primary text-xs font-bold">
+                                {t.name.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col">
+                              <span className="text-xs sm:text-sm font-semibold text-foreground">{t.name}</span>
+                              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                <Phone className="h-3 w-3" /> {t.phone}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
 
+                        <TableCell className="py-3.5">
+                          {t.bed?.room?.roomNumber ? (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted border border-border/60 text-xs font-medium font-mono text-foreground">
+                              <Bed className="h-3.5 w-3.5 text-primary" />
+                              <span>Room {t.bed.room.roomNumber} • Bed {t.bed.bedNumber}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">Unassigned</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="py-3.5">
+                          <span className="text-xs sm:text-sm font-bold text-foreground">
+                            ₹{(t.rentAmount || 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground"> /mo</span>
+                        </TableCell>
+
+                        <TableCell className="py-3.5">
+                          <div className="text-xs text-muted-foreground space-y-0.5">
+                            <p>Deposit: <strong className="text-foreground">₹{(t.securityDeposit || 0).toLocaleString()}</strong></p>
+                            <p className="text-[11px]">{t.tenureMonths || 11} months tenure</p>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="py-3.5">
+                          {t.status === 'Active' ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-muted text-muted-foreground border border-border">
+                              {t.status}
+                            </span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="py-3.5 pr-6 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => navigate('/rent')} 
+                              className="h-8 text-xs rounded-lg gap-1.5 font-medium border-primary/30 text-primary hover:bg-primary hover:text-white transition-colors"
+                            >
+                              <CreditCard className="h-3.5 w-3.5" />
+                              <span>Collect</span>
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-muted">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Actions</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="rounded-xl shadow-xl w-44">
+                                <DropdownMenuItem onClick={() => navigate('/rent')} className="text-xs cursor-pointer">
+                                  View Invoices
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => navigate('/electricity')} className="text-xs cursor-pointer">
+                                  Meter Usage
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* MOBILE CARD LIST VIEW */}
+              <div className="block md:hidden divide-y divide-border/60">
+                {tenants.map((t) => (
+                  <div key={t.id} className="p-3.5 space-y-2.5 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar className="h-9 w-9 rounded-xl border border-border/60 shrink-0">
+                          <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${t.name}`} />
+                          <AvatarFallback className="rounded-xl bg-primary/10 text-primary text-xs font-bold">
+                            {t.name.substring(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-foreground">{t.name}</span>
+                          <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                            <Phone className="h-3 w-3" /> {t.phone}
+                          </span>
+                        </div>
+                      </div>
+
+                      {t.status === 'Active' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
+                          {t.status}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-border/40">
+                      <div>
+                        {t.bed?.room?.roomNumber ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-[11px] font-mono text-foreground">
+                            <Bed className="h-3 w-3 text-primary" />
+                            Room {t.bed.room.roomNumber} • Bed {t.bed.bedNumber}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground italic">Unassigned</span>
+                        )}
+                      </div>
+                      <div className="text-xs font-bold text-foreground">
+                        ₹{(t.rentAmount || 0).toLocaleString()} <span className="text-[10px] text-muted-foreground font-normal">/mo</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>Deposit: ₹{(t.securityDeposit || 0).toLocaleString()}</span>
+                      <span>{t.tenureMonths || 11} mo tenure</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button 
+                        size="sm" 
+                        onClick={() => navigate('/rent')} 
+                        className="flex-1 h-7 text-xs rounded-lg gap-1.5 font-medium"
+                      >
+                        <CreditCard className="h-3 w-3" />
+                        <span>Collect Rent</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(`tel:${t.phone}`)}
+                        className="h-7 px-3 text-xs rounded-lg gap-1 text-muted-foreground"
+                      >
+                        <Phone className="h-3 w-3" />
+                        <span>Call</span>
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Pagination Footer */}
+      {totalPages > 1 && (
+        <div className="flex justify-center">
           <Pagination
             page={page}
             totalPages={totalPages}
@@ -159,6 +350,7 @@ export default function Tenants() {
           />
         </div>
       )}
+
     </div>
   );
 }
