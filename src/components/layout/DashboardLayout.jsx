@@ -1,9 +1,9 @@
 import React from 'react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
-import { Bell, Search } from 'lucide-react';
-import { Input } from '@/components/ui/input';
+import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import AskAiSearchBox from '../AskAiSearchBox';
 
 export function DashboardLayout({ children }) {
   return (
@@ -14,16 +14,14 @@ export function DashboardLayout({ children }) {
           <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 sm:px-6">
             <SidebarTrigger />
             <div className="w-full flex-1">
-              <form>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Search residents, rooms, or transactions..."
-                    className="w-full appearance-none bg-background pl-8 shadow-none md:w-2/3 lg:w-1/3"
-                  />
-                </div>
-              </form>
+              <div className="w-full md:w-2/3 lg:w-1/2">
+                <AskAiSearchBox
+                  placeholder="Ask AI or search residents, rooms, bills..."
+                  context="global"
+                  size="sm"
+                  className="w-full"
+                />
+              </div>
             </div>
             <Button variant="ghost" size="icon" className="rounded-full">
               <Bell className="h-5 w-5" />

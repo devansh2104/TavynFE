@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { UserCheck, Plus, RefreshCw, X, Shield, Phone, Mail, Building2, Check, AlertCircle } from 'lucide-react';
+import { UserCheck, Plus, X, Shield, Phone, Mail, Building2, Check, AlertCircle } from 'lucide-react';
 import { staffService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
 import { useAuth } from '../../context/AuthContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
 
 const MENU_MODULES = [
   { key: 'dashboard', label: 'Dashboard & Control Center', desc: 'Overview metrics & real-time alerts' },
@@ -48,9 +49,9 @@ export default function StaffManagement() {
   const [editPermissions, setEditPermissions] = useState({});
   const [updatingPerms, setUpdatingPerms] = useState(false);
 
-  const fetchStaff = async () => {
+  const fetchStaff = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await staffService.getStaff({
         hostelId: user?.role === 'SUPER_ADMIN' ? undefined : selectedHostelId
       });
@@ -65,6 +66,8 @@ export default function StaffManagement() {
   useEffect(() => {
     fetchStaff();
   }, [selectedHostelId]);
+
+  useAutoSync(() => fetchStaff(true));
 
   useEffect(() => {
     if (selectedHostelId) {
@@ -149,9 +152,6 @@ export default function StaffManagement() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button variant="ghost" size="icon" onClick={fetchStaff} disabled={loading} className="h-9 w-9">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
           <Button onClick={() => setIsAddModalOpen(true)} className="gap-1.5 flex-1 sm:flex-none">
             <Plus className="h-4 w-4" /> Add Staff Member
           </Button>

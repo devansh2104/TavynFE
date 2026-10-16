@@ -11,12 +11,14 @@ export default function InvoiceModal({ rent, hostel, isOpen, onClose }) {
   const invoiceDate = rent.generatedAt ? new Date(rent.generatedAt) : new Date();
   
   // Breakdown calculations
-  const baseRent = rent.tenant?.rentAmount || (rent.amount - (rent.tenant?.maintenanceFee || 0));
-  const maintenance = rent.tenant?.maintenanceFee || 0;
+  const baseRent = rent.rentAmount ?? rent.tenant?.rentAmount ?? (rent.amount - (rent.tenant?.maintenanceFee || 0));
+  const electricity = rent.electricityAmount ?? 0;
+  const maintenance = rent.maintenanceAmount ?? rent.tenant?.maintenanceFee ?? 0;
   const lateFee = rent.lateFee || 0;
-  const totalAmount = rent.amount;
+  const totalAmount = rent.totalBilledAmount ?? (baseRent + electricity + maintenance + lateFee);
 
   const isPaid = rent.status === 'Paid';
+  const isPartial = rent.status && rent.status.includes('Due') && rent.status !== 'Payment Due' && rent.status !== 'Pending';
   const paymentRecord = rent.payments && rent.payments.length > 0 ? rent.payments[0] : null;
 
   const handlePrint = () => {
@@ -24,7 +26,7 @@ export default function InvoiceModal({ rent, hostel, isOpen, onClose }) {
   };
 
   const handleShare = () => {
-    const text = `TAVYN Rent Invoice\nInvoice: ${invoiceNumber}\nTenant: ${rent.tenant?.name}\nRoom: ${rent.tenant?.bed?.room?.roomNumber || 'N/A'}\nMonth: ${rent.month}/${rent.year}\nAmount Due: ₹${totalAmount}\nStatus: ${rent.status}`;
+    const text = `TAVYN Rent Invoice\nInvoice: ${invoiceNumber}\nTenant: ${rent.tenant?.name}\nRoom: ${rent.tenant?.bed?.room?.roomNumber || 'N/A'}\nMonth: ${rent.month}/${rent.year}\nRoom Rent: ₹${baseRent}\nElectricity: ₹${electricity}\nMaintenance: ₹${maintenance}\nTotal Billed: ₹${totalAmount}\nStatus: ${rent.status}`;
     navigator.clipboard?.writeText(text);
     alert('Invoice details copied to clipboard!');
   };
@@ -39,7 +41,7 @@ export default function InvoiceModal({ rent, hostel, isOpen, onClose }) {
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Invoice Preview</span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              isPaid ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
+              isPaid ? 'bg-success/20 text-success' : isPartial ? 'bg-amber-500/20 text-amber-500' : 'bg-warning/20 text-warning'
             }`}>
               {rent.status.toUpperCase()}
             </span>
@@ -134,16 +136,33 @@ export default function InvoiceModal({ rent, hostel, isOpen, onClose }) {
                   </td>
                 </tr>
 
+                <tr>
+                  <td className="py-3.5 px-1">
+                    <p className="font-semibold text-foreground">Electricity Meter Bill (Current Cycle)</p>
+                    <p className="text-xs text-muted-foreground">
+                      {rent.roomElectricityTotal > 0
+                        ? `Room ${rent.tenant?.bed?.room?.roomNumber || ''} total ₹${rent.roomElectricityTotal.toLocaleString()} divided among ${rent.roomOccupiedBeds || 1} occupied bed(s)`
+                        : 'Current cycle electricity meter consumption'}
+                    </p>
+                  </td>
+                  <td className="py-3.5 text-center text-xs text-muted-foreground font-medium">
+                    {rent.month}/{rent.year}
+                  </td>
+                  <td className="py-3.5 text-right font-semibold">
+                    ₹{electricity.toLocaleString()}
+                  </td>
+                </tr>
+
                 {maintenance > 0 && (
                   <tr>
-                    <td className="py-3 px-1">
+                    <td className="py-3.5 px-1">
                       <p className="font-semibold text-foreground">Facility & Maintenance Charge</p>
                       <p className="text-xs text-muted-foreground">Common housekeeping, security, water & WiFi</p>
                     </td>
-                    <td className="py-3 text-center text-xs text-muted-foreground font-medium">
+                    <td className="py-3.5 text-center text-xs text-muted-foreground font-medium">
                       {rent.month}/{rent.year}
                     </td>
-                    <td className="py-3 text-right font-semibold">
+                    <td className="py-3.5 text-right font-semibold">
                       ₹{maintenance.toLocaleString()}
                     </td>
                   </tr>
@@ -178,9 +197,17 @@ export default function InvoiceModal({ rent, hostel, isOpen, onClose }) {
                     <p className="font-black text-xs uppercase tracking-widest">PAID IN FULL</p>
                     {paymentRecord && (
                       <p className="text-[11px] text-success/80">
-                        Via {paymentRecord.method} {paymentRecord.referenceId ? `(Ref: ${paymentRecord.referenceId})` : ''} on {format(new Date(paymentRecord.date), 'dd MMM yyyy')}
+                        Via {paymentRecord.method} {paymentRecord.referenceId ? `(${paymentRecord.referenceId})` : ''} on {format(new Date(paymentRecord.date), 'dd MMM yyyy')}
                       </p>
                     )}
+                  </div>
+                </div>
+              ) : isPartial ? (
+                <div className="border-2 border-amber-500/40 bg-amber-500/10 text-amber-600 p-3 rounded-xl flex items-center gap-2.5">
+                  <AlertCircle className="h-6 w-6 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="font-black text-xs uppercase tracking-widest">{rent.status.toUpperCase()}</p>
+                    <p className="text-[11px] text-amber-600/80">Partial collection recorded. Remaining balance pending.</p>
                   </div>
                 </div>
               ) : (
@@ -195,15 +222,25 @@ export default function InvoiceModal({ rent, hostel, isOpen, onClose }) {
             </div>
 
             {/* Calculations Breakdown */}
-            <div className="w-full sm:w-64 space-y-2">
+            <div className="w-full sm:w-72 space-y-2">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Subtotal</span>
-                <span>₹{totalAmount.toLocaleString()}</span>
+                <span>Room Rent</span>
+                <span className="font-semibold text-foreground">₹{baseRent.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Taxes & Cess</span>
-                <span>₹0.00</span>
+                <span>Electricity Bill</span>
+                <span className="font-semibold text-foreground">₹{electricity.toLocaleString()}</span>
               </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Maintenance Fee</span>
+                <span className="font-semibold text-foreground">₹{maintenance.toLocaleString()}</span>
+              </div>
+              {lateFee > 0 && (
+                <div className="flex justify-between text-xs text-destructive">
+                  <span>Late Fee</span>
+                  <span className="font-semibold">₹{lateFee.toLocaleString()}</span>
+                </div>
+              )}
               <div className="flex justify-between text-base font-extrabold text-foreground border-t pt-2">
                 <span>Total Amount Due</span>
                 <span className="text-primary text-xl">₹{totalAmount.toLocaleString()}</span>

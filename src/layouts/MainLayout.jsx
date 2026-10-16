@@ -28,6 +28,7 @@ import { useBuilding } from '../context/BuildingContext';
 import { useSocket } from '../context/SocketContext';
 import BuildingModal from '../components/BuildingModal';
 import { BrandLogo } from '../components/ui/Logo';
+import AskAiSearchBox from '../components/AskAiSearchBox';
 
 import {
   Sidebar,
@@ -351,22 +352,14 @@ export default function MainLayout() {
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2.5">
-            {/* Search Bar / Command Palette Trigger */}
-            <div className="relative hidden md:block w-56 lg:w-72">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search anything... ⌘K"
-                className="h-8 pl-8 pr-10 text-xs rounded-lg bg-muted/40 border-border/80 focus-visible:bg-background focus-visible:ring-1 transition-all"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.target.value.trim()) {
-                    navigate(`/tenants?search=${encodeURIComponent(e.target.value.trim())}`);
-                  }
-                }}
+            {/* Global Ask AI & Search Box */}
+            <div className="relative hidden md:block w-64 lg:w-80">
+              <AskAiSearchBox
+                placeholder="Ask AI or search anything... ⌘K"
+                context="global"
+                size="sm"
+                className="w-full"
               />
-              <kbd className="pointer-events-none absolute right-2 top-2 h-4 select-none items-center gap-1 rounded bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground hidden lg:inline-flex">
-                ⌘K
-              </kbd>
             </div>
 
             {/* Live Sync Status */}

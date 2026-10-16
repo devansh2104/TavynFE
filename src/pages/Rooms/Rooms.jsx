@@ -8,6 +8,8 @@ import { roomService, hostelService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
 import { RefreshCw, Search, History, Building2, Bed, Layers, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAutoSync } from '../../hooks/useAutoSync';
+import AskAiSearchBox from '../../components/AskAiSearchBox';
 
 export default function Rooms() {
   const navigate = useNavigate();
@@ -21,10 +23,10 @@ export default function Rooms() {
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
-  const fetchRoomData = async () => {
+  const fetchRoomData = async (silent = false) => {
     if (!selectedHostelId) return;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [floorsData, roomsData] = await Promise.all([
         hostelService.getFloors(selectedHostelId).catch(() => []),
         roomService.getRooms({ hostelId: selectedHostelId }).catch(() => [])
@@ -63,6 +65,8 @@ export default function Rooms() {
   useEffect(() => {
     fetchRoomData();
   }, [selectedHostelId]);
+
+  useAutoSync(() => fetchRoomData(true));
 
   const handleOpenRoomHistory = (roomId) => {
     setSelectedRoomId(roomId);
@@ -103,17 +107,6 @@ export default function Rooms() {
         
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={fetchRoomData} 
-            disabled={loading}
-            className="h-9 rounded-lg text-xs gap-2 bg-card"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Sync</span>
-          </Button>
-
-          <Button 
             size="sm" 
             onClick={() => navigate('/tenants/add')} 
             className="h-9 rounded-lg text-xs gap-2 font-semibold shadow-sm flex-1 sm:flex-none"
@@ -127,12 +120,12 @@ export default function Rooms() {
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search room number (e.g. 101, 202)..."
-            className="pl-9 h-9 rounded-xl text-xs bg-card border-border/80"
+          <AskAiSearchBox
+            placeholder="Ask AI or search room # (e.g. 101, 202)..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(val) => setSearch(val)}
+            context="rooms"
+            className="w-full"
           />
         </div>
 

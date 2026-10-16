@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download, Share2, TrendingUp, TrendingDown, IndianRupee, RefreshCw, Building2 } from 'lucide-react';
+import { Download, Share2, TrendingUp, TrendingDown, IndianRupee, Building2 } from 'lucide-react';
 import { dashboardService, financeService, electricityService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
 
 export default function Reports() {
   const { selectedHostelId, selectedHostel } = useBuilding();
@@ -17,9 +18,9 @@ export default function Reports() {
   const [readings, setReadings] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchReportData = async () => {
+  const fetchReportData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [ov, rnRes, exRes, elRes] = await Promise.all([
         dashboardService.getOverview(selectedHostelId).catch(() => null),
         financeService.getRents({
@@ -54,6 +55,8 @@ export default function Reports() {
   useEffect(() => {
     fetchReportData();
   }, [selectedHostelId, selectedMonth, selectedYear]);
+
+  useAutoSync(() => fetchReportData(true));
 
   const rentCollected = rents
     .filter((r) => r.status === 'Paid')
@@ -111,10 +114,6 @@ export default function Reports() {
             <option value={2026}>2026</option>
             <option value={2025}>2025</option>
           </select>
-
-          <Button variant="ghost" size="icon" onClick={fetchReportData} disabled={loading} className="h-9 w-9">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
 
           <Button variant="outline" size="sm" onClick={() => alert('Report summary copied to clipboard')} className="gap-1.5">
             <Share2 className="h-4 w-4" /> Share

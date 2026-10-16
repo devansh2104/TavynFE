@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { CheckCircle2, Receipt, Search, Upload, RefreshCw, Building2, Bed } from 'lucide-react';
+import { CheckCircle2, Receipt, Search, Upload, Building2, Bed } from 'lucide-react';
 import { format } from 'date-fns';
 import { financeService, roomService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
 import Pagination from '../../components/Pagination';
+import AskAiSearchBox from '../../components/AskAiSearchBox';
 
 const categories = ['Electricity', 'Water', 'WiFi', 'Repair', 'Salary', 'Cleaning', 'Other'];
 
@@ -47,9 +49,9 @@ export default function Expenses() {
     }
   };
 
-  const fetchExpenses = async () => {
+  const fetchExpenses = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await financeService.getExpenses({
         hostelId: selectedHostelId,
         category: filterCategory !== 'All' ? filterCategory : undefined,
@@ -74,6 +76,8 @@ export default function Expenses() {
   useEffect(() => {
     fetchExpenses();
   }, [selectedHostelId, filterCategory, page]);
+
+  useAutoSync(() => fetchExpenses(true));
 
   const handleSave = async () => {
     if (!selectedHostelId || !amount || !selectedCategory) return;
@@ -110,9 +114,6 @@ export default function Expenses() {
             {selectedHostel?.name || 'All Buildings'} • Track building-wide and room-specific operational costs
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={fetchExpenses} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -250,16 +251,16 @@ export default function Expenses() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search descriptions..." 
-                className="pl-9 bg-card" 
+              <AskAiSearchBox
+                placeholder="Ask AI or search expense descriptions..."
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
+                onChange={(val) => {
+                  setSearch(val);
                   setPage(1);
                 }}
-                onKeyDown={(e) => e.key === 'Enter' && fetchExpenses()}
+                onSubmit={() => fetchExpenses()}
+                context="expenses"
+                className="w-full"
               />
             </div>
 

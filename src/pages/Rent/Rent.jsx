@@ -16,13 +16,19 @@ import {
   Plus, 
   AlertCircle,
   Download,
-  DollarSign
+  DollarSign,
+  Zap,
+  Wrench,
+  Home,
+  X
 } from 'lucide-react';
 import { financeService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
 import Pagination from '../../components/Pagination';
 import InvoiceModal from '../../components/InvoiceModal';
 import { KpiCard } from '../../components/dashboard/KpiCard';
+import AskAiSearchBox from '../../components/AskAiSearchBox';
 
 export default function Rent() {
   const { selectedHostelId, selectedHostel } = useBuilding();
@@ -35,6 +41,11 @@ export default function Rent() {
   const [reference, setReference] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Collect popup toggle states (all ON by default)
+  const [toggleRent, setToggleRent] = useState(true);
+  const [toggleElectricity, setToggleElectricity] = useState(true);
+  const [toggleMaintenance, setToggleMaintenance] = useState(true);
 
   // Invoice Modal state
   const [invoiceRent, setInvoiceRent] = useState(null);
@@ -52,9 +63,9 @@ export default function Rent() {
   // Generation state
   const [generating, setGenerating] = useState(false);
 
-  const fetchRents = async () => {
+  const fetchRents = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await financeService.getRents({
         hostelId: selectedHostelId,
         status: statusFilter,
@@ -80,6 +91,8 @@ export default function Rent() {
     fetchRents();
   }, [selectedHostelId, statusFilter, monthFilter, yearFilter, page]);
 
+  useAutoSync(() => fetchRents(true));
+
   const handleGenerateMonthly = async () => {
     if (!selectedHostelId) return;
     const now = new Date();
@@ -97,9 +110,70 @@ export default function Rent() {
     }
   };
 
+  const updateCollectingAmount = (rToggle, eToggle, mToggle, rentObj = selectedRent) => {
+    if (!rentObj) return;
+    const rAmount = rentObj.rentAmount ?? rentObj.tenant?.rentAmount ?? 0;
+    const eAmount = rentObj.electricityAmount ?? 0;
+    const mAmount = rentObj.maintenanceAmount ?? rentObj.tenant?.maintenanceFee ?? 0;
+
+    let sum = 0;
+    if (rToggle) sum += rAmount;
+    if (eToggle) sum += eAmount;
+    if (mToggle) sum += mAmount;
+    setPaymentAmount(sum.toString());
+  };
+
+  const formatBreakdown = (rent) => {
+    if (!rent) return '';
+    if (rent.breakdownLabel) return rent.breakdownLabel;
+    const parts = [];
+    const r = rent.rentAmount ?? rent.tenant?.rentAmount ?? 0;
+    const e = rent.electricityAmount ?? 0;
+    const m = rent.maintenanceAmount ?? rent.tenant?.maintenanceFee ?? 0;
+    const l = rent.lateFee ?? 0;
+    if (r > 0) parts.push(`Rent ₹${r.toLocaleString()}`);
+    if (e > 0) parts.push(`Elec ₹${e.toLocaleString()}`);
+    if (m > 0) parts.push(`Maint ₹${m.toLocaleString()}`);
+    if (l > 0) parts.push(`Late ₹${l.toLocaleString()}`);
+    return parts.length > 0 ? parts.join(' + ') : `Rent ₹${(rent.amount || 0).toLocaleString()}`;
+  };
+
   const handleCollectClick = (rent) => {
     setSelectedRent(rent);
-    setPaymentAmount(rent.amount.toString());
+
+    const rAmount = rent.rentAmount ?? rent.tenant?.rentAmount ?? 0;
+    const eAmount = rent.electricityAmount ?? 0;
+    const mAmount = rent.maintenanceAmount ?? rent.tenant?.maintenanceFee ?? 0;
+    const totalPaid = rent.totalPaidAmount ?? (rent.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    // Default toggles dynamically: if rent already settled, default to collecting unpaid balance
+    let initRent = totalPaid < rAmount;
+    let initElec = eAmount > 0;
+    let initMaint = mAmount > 0 && totalPaid < (rAmount + mAmount);
+
+    if (rent.status === 'Electricity Due') {
+      initRent = false;
+      initElec = true;
+      initMaint = false;
+    } else if (rent.status === 'Maintenance Due') {
+      initRent = false;
+      initElec = false;
+      initMaint = true;
+    } else if (rent.status === 'Electricity & Maint. Due') {
+      initRent = false;
+      initElec = true;
+      initMaint = true;
+    } else if (rent.status === 'Rent Due') {
+      initRent = true;
+      initElec = false;
+      initMaint = false;
+    }
+
+    setToggleRent(initRent);
+    setToggleElectricity(initElec);
+    setToggleMaintenance(initMaint);
+
+    updateCollectingAmount(initRent, initElec, initMaint, rent);
   };
 
   const handleOpenInvoice = (rent) => {
@@ -111,12 +185,43 @@ export default function Rent() {
     if (!selectedRent) return;
     setSubmitting(true);
     try {
+      const rAmount = selectedRent.rentAmount ?? selectedRent.tenant?.rentAmount ?? 0;
+      const eAmount = selectedRent.electricityAmount ?? 0;
+      const mAmount = selectedRent.maintenanceAmount ?? selectedRent.tenant?.maintenanceFee ?? 0;
+
+      // Identify unpaid components
+      const unpaidItems = [];
+      if (!toggleRent && rAmount > 0) unpaidItems.push('Rent');
+      if (!toggleElectricity && eAmount > 0) unpaidItems.push('Electricity');
+      if (!toggleMaintenance && mAmount > 0) unpaidItems.push('Maintenance');
+
+      let calculatedStatus = 'Paid';
+      if (unpaidItems.length === 1) {
+        calculatedStatus = `${unpaidItems[0]} Due`;
+      } else if (unpaidItems.length === 2) {
+        if (unpaidItems.includes('Electricity') && unpaidItems.includes('Maintenance')) {
+          calculatedStatus = 'Electricity & Maint. Due';
+        } else if (unpaidItems.includes('Rent') && unpaidItems.includes('Electricity')) {
+          calculatedStatus = 'Rent & Electricity Due';
+        } else {
+          calculatedStatus = 'Rent & Maint. Due';
+        }
+      } else if (unpaidItems.length >= 3) {
+        calculatedStatus = 'Payment Due';
+      }
+
       await financeService.recordPayment({
         tenantId: selectedRent.tenantId,
         rentId: selectedRent.id,
         amount: parseFloat(paymentAmount) || 0,
         method,
-        referenceId: reference || null
+        referenceId: reference || null,
+        status: calculatedStatus,
+        paidComponents: {
+          rent: toggleRent,
+          electricity: toggleElectricity,
+          maintenance: toggleMaintenance
+        }
       });
       setShowSuccess(true);
       setTimeout(() => {
@@ -131,93 +236,79 @@ export default function Rent() {
     }
   };
 
-  const totalRent = rents.reduce((acc, r) => acc + (r.amount || 0), 0);
-  const totalCollected = rents.filter((r) => r.status === 'Paid').reduce((acc, r) => acc + (r.amount || 0), 0);
-  const totalPending = totalRent - totalCollected;
-
-  if (selectedRent) {
-    if (showSuccess) {
+  const renderStatusBadge = (status) => {
+    if (status === 'Paid') {
       return (
-        <div className="flex flex-col items-center justify-center h-[50vh] space-y-4 animate-in zoom-in">
-          <div className="p-4 rounded-full bg-emerald-500/10 text-emerald-600">
-            <CheckCircle2 className="h-16 w-16" />
-          </div>
-          <h2 className="text-2xl font-extrabold text-foreground tracking-tight">Payment Recorded</h2>
-          <p className="text-xs text-muted-foreground">₹{paymentAmount} successfully updated in database</p>
-        </div>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+          Paid & Settled
+        </span>
+      );
+    }
+
+    if (status === 'Electricity Due') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+          <Zap className="h-3 w-3 text-amber-500" />
+          Electricity Due
+        </span>
+      );
+    }
+
+    if (status === 'Maintenance Due') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+          <Wrench className="h-3 w-3 text-amber-500" />
+          Maintenance Due
+        </span>
+      );
+    }
+
+    if (status === 'Electricity & Maint. Due') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-orange-500/10 text-orange-500 border border-orange-500/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-orange-500"></span>
+          Electricity & Maint. Due
+        </span>
+      );
+    }
+
+    if (status === 'Rent Due') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+          Rent Due
+        </span>
+      );
+    }
+
+    if (status && status.includes('Due')) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+          {status}
+        </span>
       );
     }
 
     return (
-      <div className="max-w-lg mx-auto space-y-6 animate-in slide-in-from-right pb-20">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Record Rent Payment</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {selectedRent.tenant?.name || 'Resident'} • Cycle {selectedRent.month}/{selectedRent.year}
-          </p>
-        </div>
-
-        <Card className="rounded-2xl border border-border/80 bg-card shadow-lg overflow-hidden">
-          <CardContent className="p-6 space-y-6">
-            <div className="flex justify-between items-center bg-muted/40 p-4 rounded-xl border border-border/60">
-              <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Invoice Balance</span>
-              <span className="text-2xl font-extrabold text-amber-600">₹{selectedRent.amount.toLocaleString()}</span>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount Received (₹)</label>
-              <Input 
-                type="number" 
-                value={paymentAmount} 
-                onChange={(e) => setPaymentAmount(e.target.value)} 
-                className="text-lg font-bold h-11 rounded-xl bg-card"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment Method</label>
-              <div className="grid grid-cols-3 gap-2">
-                {['UPI', 'Cash', 'Bank'].map((m) => (
-                  <Button 
-                    key={m}
-                    type="button"
-                    variant={method === m ? 'default' : 'outline'}
-                    onClick={() => setMethod(m)}
-                    className="h-10 rounded-xl text-xs font-semibold"
-                  >
-                    {m}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reference / Transaction ID</label>
-              <Input 
-                placeholder="UPI Ref ID or Cheque number"
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-                className="h-10 rounded-xl text-xs bg-card"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1 rounded-xl h-10 text-xs font-medium" onClick={() => setSelectedRent(null)}>
-                Cancel
-              </Button>
-              <Button 
-                className="flex-1 rounded-xl h-10 text-xs font-semibold shadow-sm" 
-                onClick={handleConfirmPayment}
-                disabled={submitting}
-              >
-                {submitting ? 'Recording...' : 'Confirm Payment'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+        Payment Due
+      </span>
     );
-  }
+  };
+
+  const totalRent = rents.reduce((acc, r) => acc + (r.totalBilledAmount || r.amount || 0), 0);
+  const totalCollected = rents.reduce((acc, r) => {
+    const paidSum = (r.payments || []).reduce((pAcc, p) => pAcc + (p.amount || 0), 0);
+    if (paidSum > 0) return acc + paidSum;
+    if (r.status === 'Paid') return acc + (r.totalBilledAmount || r.amount || 0);
+    return acc;
+  }, 0);
+  const totalPending = Math.max(0, totalRent - totalCollected);
+
+
 
   return (
     <div className="space-y-6 animate-in fade-in pb-20">
@@ -230,6 +321,235 @@ export default function Rent() {
           setInvoiceRent(null);
         }}
       />
+
+      {/* Collect Payment Pop-up Modal */}
+      {selectedRent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-card border border-border/80 rounded-2xl shadow-2xl overflow-hidden my-8 animate-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-border/60 bg-muted/30">
+              <div>
+                <h2 className="text-lg font-bold tracking-tight text-foreground">Record Rent Payment</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedRent.tenant?.name || 'Resident'} • Room {selectedRent.tenant?.bed?.room?.roomNumber || 'N/A'} (Bed {selectedRent.tenant?.bed?.bedNumber || 'N/A'}) • Cycle {selectedRent.month}/{selectedRent.year}
+                </p>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setSelectedRent(null)} 
+                className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {showSuccess ? (
+              <div className="p-10 flex flex-col items-center justify-center space-y-3 animate-in zoom-in">
+                <div className="p-4 rounded-full bg-emerald-500/10 text-emerald-600">
+                  <CheckCircle2 className="h-14 w-14" />
+                </div>
+                <h3 className="text-xl font-bold text-foreground">Payment Recorded</h3>
+                <p className="text-xs text-muted-foreground">₹{paymentAmount} successfully updated in database</p>
+              </div>
+            ) : (
+              <div className="p-6 space-y-5">
+                {/* Total Billed Summary */}
+                <div className="flex justify-between items-center bg-muted/40 p-3.5 rounded-xl border border-border/60">
+                  <div>
+                    <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider block">Total Billed Amount</span>
+                    <span className="text-[11px] text-muted-foreground">Cycle {selectedRent.month}/{selectedRent.year}</span>
+                  </div>
+                  <span className="text-2xl font-extrabold text-amber-600">
+                    ₹{(selectedRent.totalBilledAmount ?? ((selectedRent.rentAmount ?? selectedRent.tenant?.rentAmount ?? 0) + (selectedRent.electricityAmount ?? 0) + (selectedRent.maintenanceAmount ?? selectedRent.tenant?.maintenanceFee ?? 0))).toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Component Toggles */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Payment Components (Toggle to Include / Exclude)
+                  </label>
+                  <div className="space-y-2 bg-muted/20 p-3 rounded-xl border border-border/60 divide-y divide-border/40">
+                    {/* Room Rent */}
+                    <div className="flex items-center justify-between pb-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                          <Home className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-foreground">Room Rent</p>
+                          <p className="text-[10px] text-muted-foreground">Monthly accommodation charge</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-foreground">
+                          ₹{(selectedRent.rentAmount ?? selectedRent.tenant?.rentAmount ?? 0).toLocaleString()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !toggleRent;
+                            setToggleRent(next);
+                            updateCollectingAmount(next, toggleElectricity, toggleMaintenance);
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                            toggleRent ? 'bg-primary' : 'bg-muted-foreground/30'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              toggleRent ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Electricity Bill */}
+                    <div className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
+                          <Zap className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-foreground">Electricity Bill</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {selectedRent.roomOccupiedBeds > 1
+                              ? `Divided per bed (÷ ${selectedRent.roomOccupiedBeds} beds)`
+                              : 'Meter reading consumption'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-foreground">
+                          ₹{(selectedRent.electricityAmount ?? 0).toLocaleString()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !toggleElectricity;
+                            setToggleElectricity(next);
+                            updateCollectingAmount(toggleRent, next, toggleMaintenance);
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                            toggleElectricity ? 'bg-primary' : 'bg-muted-foreground/30'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              toggleElectricity ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Maintenance Fee */}
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
+                          <Wrench className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-foreground">Maintenance Fee</p>
+                          <p className="text-[10px] text-muted-foreground">Housekeeping, water & common amenities</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-foreground">
+                          ₹{(selectedRent.maintenanceAmount ?? selectedRent.tenant?.maintenanceFee ?? 0).toLocaleString()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !toggleMaintenance;
+                            setToggleMaintenance(next);
+                            updateCollectingAmount(toggleRent, toggleElectricity, next);
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                            toggleMaintenance ? 'bg-primary' : 'bg-muted-foreground/30'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              toggleMaintenance ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Amount Collecting */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Amount Collecting (₹)
+                  </label>
+                  <Input 
+                    type="number" 
+                    value={paymentAmount} 
+                    onChange={(e) => setPaymentAmount(e.target.value)} 
+                    className="text-lg font-bold h-11 rounded-xl bg-card"
+                  />
+                </div>
+
+                {/* Payment Method */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Payment Method
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['UPI', 'Cash', 'Bank'].map((m) => (
+                      <Button 
+                        key={m}
+                        type="button"
+                        variant={method === m ? 'default' : 'outline'}
+                        onClick={() => setMethod(m)}
+                        className="h-10 rounded-xl text-xs font-semibold"
+                      >
+                        {m}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reference ID */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Reference / Transaction ID
+                  </label>
+                  <Input 
+                    placeholder="UPI Ref ID or Cheque number"
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                    className="h-10 rounded-xl text-xs bg-card"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 rounded-xl h-10 text-xs font-medium" 
+                    onClick={() => setSelectedRent(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    className="flex-1 rounded-xl h-10 text-xs font-semibold shadow-sm" 
+                    onClick={handleConfirmPayment}
+                    disabled={submitting}
+                  >
+                    {submitting ? 'Recording...' : 'Confirm Payment'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Header Toolbar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border/60">
@@ -257,17 +577,6 @@ export default function Rent() {
           >
             <Calendar className="h-3.5 w-3.5 text-primary" />
             <span>{generating ? 'Generating...' : 'Auto-Generate Bills'}</span>
-          </Button>
-
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={fetchRents} 
-            disabled={loading}
-            className="h-9 rounded-lg text-xs gap-1.5 bg-card"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Sync</span>
           </Button>
         </div>
       </div>
@@ -309,16 +618,16 @@ export default function Rent() {
       {/* Filters and Search Bar */}
       <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by resident name or phone..." 
-            className="pl-9 h-9 rounded-xl text-xs bg-card border-border/80" 
+          <AskAiSearchBox
+            placeholder="Ask AI or search rent by resident, phone..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+            onChange={(val) => {
+              setSearch(val);
               setPage(1);
             }}
-            onKeyDown={(e) => e.key === 'Enter' && fetchRents()}
+            onSubmit={() => fetchRents()}
+            context="rent"
+            className="w-full"
           />
         </div>
 
@@ -393,6 +702,7 @@ export default function Rent() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="text-xs font-semibold py-3 pl-6">Resident</TableHead>
                       <TableHead className="text-xs font-semibold py-3">Billing Cycle</TableHead>
+                      <TableHead className="text-xs font-semibold py-3">Electricity Bill</TableHead>
                       <TableHead className="text-xs font-semibold py-3">Bill Amount</TableHead>
                       <TableHead className="text-xs font-semibold py-3">Status</TableHead>
                       <TableHead className="text-xs font-semibold py-3 pr-6 text-right">Actions</TableHead>
@@ -422,24 +732,36 @@ export default function Rent() {
                           Cycle {rent.month}/{rent.year}
                         </TableCell>
 
+                        {/* Electricity Bill Column */}
                         <TableCell className="py-3.5">
-                          <span className="text-xs sm:text-sm font-bold text-foreground">
-                            ₹{(rent.amount || 0).toLocaleString()}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-1">
+                              <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                              ₹{(rent.electricityAmount || 0).toLocaleString()}
+                            </span>
+                            {rent.roomElectricityTotal > 0 ? (
+                              <span className="text-[10px] text-muted-foreground">
+                                Room ₹{rent.roomElectricityTotal.toLocaleString()} ÷ {rent.roomOccupiedBeds || 1} {rent.roomOccupiedBeds === 1 ? 'bed' : 'beds'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground/60">No reading</span>
+                            )}
+                          </div>
                         </TableCell>
 
                         <TableCell className="py-3.5">
-                          {rent.status === 'Paid' ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                              Paid & Settled
+                          <div className="flex flex-col">
+                            <span className="text-xs sm:text-sm font-extrabold text-foreground">
+                              ₹{(rent.totalBilledAmount || rent.amount || 0).toLocaleString()}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                              Payment Due
+                            <span className="text-[10px] text-muted-foreground font-medium">
+                              {formatBreakdown(rent)}
                             </span>
-                          )}
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="py-3.5">
+                          {renderStatusBadge(rent.status)}
                         </TableCell>
 
                         <TableCell className="py-3.5 pr-6 text-right">
@@ -495,25 +817,27 @@ export default function Rent() {
                         </div>
                       </div>
 
-                      {rent.status === 'Paid' ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                          Settled
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                          Due
-                        </span>
-                      )}
+                      {renderStatusBadge(rent.status)}
                     </div>
 
                     <div className="flex items-center justify-between text-xs pt-1 border-t border-border/40">
-                      <span className="text-[11px] text-muted-foreground font-mono">
-                        Room {rent.tenant?.bed?.room?.roomNumber || 'N/A'} • Bed {rent.tenant?.bed?.bedNumber || 'N/A'}
-                      </span>
-                      <div className="text-xs font-extrabold text-foreground">
-                        ₹{(rent.amount || 0).toLocaleString()}
+                      <div className="flex flex-col">
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          Room {rent.tenant?.bed?.room?.roomNumber || 'N/A'} • Bed {rent.tenant?.bed?.bedNumber || 'N/A'}
+                        </span>
+                        <span className="text-[10px] text-amber-500 font-medium flex items-center gap-1 mt-0.5">
+                          <Zap className="h-3 w-3" /> Elec: ₹{(rent.electricityAmount || 0).toLocaleString()}
+                          {rent.roomOccupiedBeds > 1 ? ` (÷ ${rent.roomOccupiedBeds} beds)` : ''}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-muted-foreground block">Total Billed</span>
+                        <div className="text-sm font-extrabold text-foreground">
+                          ₹{(rent.totalBilledAmount || rent.amount || 0).toLocaleString()}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground block font-medium">
+                          {formatBreakdown(rent)}
+                        </span>
                       </div>
                     </div>
 

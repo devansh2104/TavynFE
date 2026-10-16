@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, UserCheck, RefreshCw, X, Shield, Building2, Check, AlertCircle } from 'lucide-react';
+import { ShieldCheck, UserCheck, X, Shield, Building2, Check, AlertCircle } from 'lucide-react';
 import { accessControlService } from '../../services';
+import { useAutoSync } from '../../hooks/useAutoSync';
 
 const MENU_MODULES = [
   { key: 'dashboard', label: 'Dashboard & Control Center', desc: 'Overview metrics & real-time alerts' },
@@ -25,9 +26,9 @@ export default function AccessControl() {
   const [editPermissions, setEditPermissions] = useState({});
   const [saving, setSaving] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [adminsData, rolesData] = await Promise.all([
         accessControlService.getHostelAdmins().catch(() => []),
         accessControlService.getRolePermissions().catch(() => ({}))
@@ -44,6 +45,8 @@ export default function AccessControl() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useAutoSync(() => fetchData(true));
 
   const handleToggleAdminPerm = (key) => {
     setEditPermissions((prev) => ({
@@ -113,9 +116,6 @@ export default function AccessControl() {
               Role Defaults
             </Button>
           </div>
-          <Button variant="ghost" size="icon" onClick={fetchData} disabled={loading} className="h-9 w-9">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
         </div>
       </div>
 

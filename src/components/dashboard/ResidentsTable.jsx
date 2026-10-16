@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MoreHorizontal, Search, UserCheck, CreditCard, ChevronRight, Eye } from 'lucide-react';
+import { MoreHorizontal, UserCheck, CreditCard, ChevronRight, Eye } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useNavigate } from 'react-router-dom';
+import AskAiSearchBox from '../AskAiSearchBox';
 
 const defaultResidents = [
   {
@@ -84,13 +85,14 @@ export function ResidentsTable({ residents = defaultResidents }) {
           </CardDescription>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-56">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Search resident..."
+          <div className="relative flex-1 sm:w-60">
+            <AskAiSearchBox
+              placeholder="Ask AI or search resident..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8 pl-8 text-xs rounded-lg bg-muted/40"
+              onChange={(val) => setSearchTerm(val)}
+              size="sm"
+              showButton={false}
+              className="w-full"
             />
           </div>
           <Button 

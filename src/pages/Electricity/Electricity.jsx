@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { CheckCircle2, AlertCircle, RefreshCw, History, Zap, Search, Calendar } from 'lucide-react';
+import { CheckCircle2, AlertCircle, History, Zap, Search, Calendar } from 'lucide-react';
 import { electricityService, roomService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
 import Pagination from '../../components/Pagination';
+import AskAiSearchBox from '../../components/AskAiSearchBox';
 
 export default function Electricity() {
   const { selectedHostelId, selectedHostel } = useBuilding();
@@ -16,6 +18,9 @@ export default function Electricity() {
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [defaultRate, setDefaultRate] = useState(() => {
+    return localStorage.getItem('tavyn_last_electricity_rate') || '8';
+  });
 
   // History states
   const [historyList, setHistoryList] = useState([]);
@@ -27,15 +32,19 @@ export default function Electricity() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
 
-  const fetchRoomsForEntry = async () => {
+  const fetchRoomsForEntry = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [readingsRes, roomsData] = await Promise.all([
         electricityService.getReadings({ hostelId: selectedHostelId }).catch(() => ({ readings: [] })),
         roomService.getRooms({ hostelId: selectedHostelId }).catch(() => [])
       ]);
 
       const previousReadings = readingsRes?.readings || (Array.isArray(readingsRes) ? readingsRes : []);
+      const savedRateStr = localStorage.getItem('tavyn_last_electricity_rate');
+      const savedRateNum = savedRateStr !== null && savedRateStr !== '' && !isNaN(parseFloat(savedRateStr)) && parseFloat(savedRateStr) > 0
+        ? parseFloat(savedRateStr)
+        : null;
 
       // Build meter rows for rooms in this building
       const rows = (roomsData || []).map((r) => {
@@ -44,7 +53,8 @@ export default function Electricity() {
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
 
         const previousVal = lastReading ? lastReading.currentReading : 1000;
-        const previousRate = lastReading ? lastReading.ratePerUnit || 8 : 8;
+        const previousRate = lastReading && lastReading.ratePerUnit && lastReading.ratePerUnit > 0 ? lastReading.ratePerUnit : 8;
+        const resolvedRate = savedRateNum !== null ? savedRateNum : previousRate;
 
         return {
           roomId: r.id,
@@ -52,11 +62,25 @@ export default function Electricity() {
           floorName: r.floor?.name || '',
           previous: previousVal,
           current: '',
-          rate: previousRate
+          rate: resolvedRate
         };
       });
 
-      setReadings(rows);
+      setReadings((prev) => {
+        if (!prev || prev.length === 0) return rows;
+        // Merge with existing user entries so auto-sync does not wipe in-progress typing
+        return rows.map((newRow) => {
+          const existing = prev.find((p) => p.roomId === newRow.roomId);
+          if (existing && (existing.current !== '' || (existing.rate !== '' && existing.rate !== newRow.rate))) {
+            return {
+              ...newRow,
+              current: existing.current !== '' ? existing.current : newRow.current,
+              rate: existing.rate !== '' ? existing.rate : newRow.rate
+            };
+          }
+          return newRow;
+        });
+      });
     } catch (err) {
       console.error('Failed to load electricity entry data', err);
     } finally {
@@ -64,9 +88,9 @@ export default function Electricity() {
     }
   };
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (silent = false) => {
     try {
-      setHistoryLoading(true);
+      if (!silent) setHistoryLoading(true);
       const res = await electricityService.getReadings({
         hostelId: selectedHostelId,
         search: historySearch,
@@ -94,20 +118,58 @@ export default function Electricity() {
     }
   }, [selectedHostelId, activeTab, page, historyMonth, historyYear]);
 
+  useAutoSync(() => {
+    if (activeTab === 'entry') {
+      fetchRoomsForEntry(true);
+    } else {
+      fetchHistory(true);
+    }
+  });
+
   const handleCurrentChange = (index, value) => {
+    let cleanValue = typeof value === 'string' ? value.replace(/^0+(?=\d)/, '') : value;
+    if (cleanValue === undefined || cleanValue === null) cleanValue = '';
     const updated = [...readings];
-    updated[index].current = value;
+    updated[index].current = cleanValue;
     setReadings(updated);
   };
 
   const handleRateChange = (index, value) => {
+    // Strip leading zero if followed by digits (e.g. "012" -> "12", "05" -> "5", but preserve "0.5", "0", "")
+    let cleanValue = typeof value === 'string' ? value.replace(/^0+(?=\d)/, '') : value;
+    if (cleanValue === undefined || cleanValue === null) cleanValue = '';
+
     const updated = [...readings];
-    updated[index].rate = parseFloat(value) || 0;
+    updated[index].rate = cleanValue;
     setReadings(updated);
+
+    // Save the last rate price whenever entered
+    const num = parseFloat(cleanValue);
+    if (!isNaN(num) && num > 0) {
+      localStorage.setItem('tavyn_last_electricity_rate', cleanValue.toString());
+      setDefaultRate(cleanValue.toString());
+    }
+  };
+
+  const applyRateToAll = (rateVal) => {
+    let clean = typeof rateVal === 'string' ? rateVal.replace(/^0+(?=\d)/, '') : rateVal;
+    if (clean === undefined || clean === null) clean = '';
+
+    const updated = readings.map((m) => ({
+      ...m,
+      rate: clean
+    }));
+    setReadings(updated);
+
+    const num = parseFloat(clean);
+    if (!isNaN(num) && num > 0) {
+      localStorage.setItem('tavyn_last_electricity_rate', clean.toString());
+      setDefaultRate(clean.toString());
+    }
   };
 
   const calculateUsage = (previous, current) => {
-    if (!current) return 0;
+    if (current === '' || current === undefined || current === null) return 0;
     return parseFloat(current) - parseFloat(previous);
   };
 
@@ -118,11 +180,19 @@ export default function Electricity() {
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
+      // Persist the last used rate price
+      const validRateMeter = readings.find((m) => m.rate !== '' && parseFloat(m.rate) > 0);
+      if (validRateMeter) {
+        localStorage.setItem('tavyn_last_electricity_rate', validRateMeter.rate.toString());
+        setDefaultRate(validRateMeter.rate.toString());
+      }
+
       for (const meter of readings) {
         if (meter.current !== '') {
           const usage = calculateUsage(meter.previous, meter.current);
           if (usage >= 0) {
-            const bill = usage * meter.rate;
+            const rateVal = parseFloat(meter.rate) || 0;
+            const bill = usage * rateVal;
             await electricityService.saveReading({
               roomId: meter.roomId,
               month: currentMonth,
@@ -130,7 +200,7 @@ export default function Electricity() {
               previousReading: parseFloat(meter.previous),
               currentReading: parseFloat(meter.current),
               unitsConsumed: usage,
-              ratePerUnit: parseFloat(meter.rate),
+              ratePerUnit: rateVal,
               billAmount: bill,
               netAmount: bill
             });
@@ -180,14 +250,6 @@ export default function Electricity() {
           >
             <History className="h-4 w-4 mr-1" /> Bill History
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={activeTab === 'entry' ? fetchRoomsForEntry : fetchHistory}
-            className="h-8 w-8"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading || historyLoading ? 'animate-spin' : ''}`} />
-          </Button>
         </div>
       </div>
 
@@ -201,11 +263,45 @@ export default function Electricity() {
           </div>
         ) : (
           <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-card p-3 rounded-lg border">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Default Unit Rate:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-bold">₹</span>
+                  <Input 
+                    type="number" 
+                    step="any"
+                    placeholder="8.0" 
+                    value={defaultRate}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      setDefaultRate(e.target.value);
+                      applyRateToAll(e.target.value);
+                    }}
+                    className="w-24 h-8 text-sm font-bold"
+                  />
+                  <Button 
+                    type="button" 
+                    size="sm" 
+                    variant="secondary" 
+                    className="h-8 text-xs font-medium"
+                    onClick={() => applyRateToAll(defaultRate)}
+                  >
+                    Apply to All Rooms
+                  </Button>
+                </div>
+              </div>
+              <span className="text-xs text-muted-foreground font-medium">
+                Last saved rate: ₹{defaultRate || '8'}/unit
+              </span>
+            </div>
+
             <div className="space-y-3">
               {readings.map((meter, idx) => {
                 const usage = calculateUsage(meter.previous, meter.current);
                 const isInvalid = meter.current !== '' && usage < 0;
-                const netAmount = usage > 0 ? usage * meter.rate : 0;
+                const rateVal = parseFloat(meter.rate) || 0;
+                const netAmount = usage > 0 ? usage * rateVal : 0;
 
                 return (
                   <Card key={meter.roomId} className={`overflow-hidden transition-colors ${isInvalid ? 'border-destructive' : 'border-border'}`}>
@@ -225,7 +321,8 @@ export default function Electricity() {
                           <Input 
                             type="number" 
                             placeholder="Reading..." 
-                            value={meter.current}
+                            value={meter.current ?? ''}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleCurrentChange(idx, e.target.value)}
                             className={`text-base font-bold ${isInvalid ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                           />
@@ -233,12 +330,23 @@ export default function Electricity() {
 
                         {/* Per Unit Rate */}
                         <div className="sm:col-span-2">
-                          <label className="text-[11px] font-medium text-muted-foreground">Rate (₹/Unit)</label>
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-medium text-muted-foreground">Rate (₹/Unit)</label>
+                            <button
+                              type="button"
+                              onClick={() => applyRateToAll(meter.rate)}
+                              className="text-[10px] text-primary hover:underline font-medium"
+                              title="Apply this rate to all rooms"
+                            >
+                              Apply all
+                            </button>
+                          </div>
                           <Input 
                             type="number" 
-                            step="0.5"
+                            step="any"
                             placeholder="8.0" 
-                            value={meter.rate}
+                            value={meter.rate ?? ''}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleRateChange(idx, e.target.value)}
                             className="text-base font-semibold"
                           />
@@ -293,16 +401,16 @@ export default function Electricity() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by Room number..."
-                className="pl-9 bg-card"
+              <AskAiSearchBox
+                placeholder="Ask AI or search meter readings by room #..."
                 value={historySearch}
-                onChange={(e) => {
-                  setHistorySearch(e.target.value);
+                onChange={(val) => {
+                  setHistorySearch(val);
                   setPage(1);
                 }}
-                onKeyDown={(e) => e.key === 'Enter' && fetchHistory()}
+                onSubmit={() => fetchHistory()}
+                context="electricity"
+                className="w-full"
               />
             </div>
 

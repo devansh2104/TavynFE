@@ -10,7 +10,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useNavigate } from 'react-router-dom';
 import { tenantService } from '../../services';
 import { useBuilding } from '../../context/BuildingContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
 import Pagination from '../../components/Pagination';
+import AskAiSearchBox from '../../components/AskAiSearchBox';
 
 export default function Tenants() {
   const navigate = useNavigate();
@@ -26,9 +28,9 @@ export default function Tenants() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
 
-  const fetchTenants = async () => {
+  const fetchTenants = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await tenantService.getTenants({
         hostelId: selectedHostelId,
         status: filter !== 'All' ? filter : undefined,
@@ -52,6 +54,8 @@ export default function Tenants() {
     fetchTenants();
   }, [selectedHostelId, filter, page]);
 
+  useAutoSync(() => fetchTenants(true));
+
   return (
     <div className="space-y-6 animate-in fade-in pb-20">
       
@@ -72,16 +76,6 @@ export default function Tenants() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={fetchTenants} 
-            disabled={loading}
-            className="h-9 rounded-lg text-xs gap-2 bg-card"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Sync</span>
-          </Button>
-          <Button 
             size="sm" 
             onClick={() => navigate('/tenants/add')} 
             className="h-9 rounded-lg text-xs gap-2 font-semibold shadow-sm flex-1 sm:flex-none"
@@ -95,16 +89,16 @@ export default function Tenants() {
       {/* Filter & Search Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by resident name or phone..." 
-            className="pl-9 h-9 rounded-xl text-xs bg-card border-border/80" 
+          <AskAiSearchBox
+            placeholder="Ask AI or search resident by name, phone..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+            onChange={(val) => {
+              setSearch(val);
               setPage(1);
             }}
-            onKeyDown={(e) => e.key === 'Enter' && fetchTenants()}
+            onSubmit={() => fetchTenants()}
+            context="tenants"
+            className="w-full"
           />
         </div>
         

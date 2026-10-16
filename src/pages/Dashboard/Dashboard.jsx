@@ -9,7 +9,6 @@ import {
   CreditCard, 
   Zap, 
   Plus, 
-  RefreshCw, 
   ArrowUpRight, 
   AlertCircle, 
   Download, 
@@ -38,6 +37,8 @@ import { ResidentsTable } from '../../components/dashboard/ResidentsTable';
 import { NoticesWidget } from '../../components/dashboard/NoticesWidget';
 import { RealtimeFeedWidget } from '../../components/dashboard/RealtimeFeedWidget';
 import { useSocket } from '../../context/SocketContext';
+import { useAutoSync } from '../../hooks/useAutoSync';
+import AskAiSearchBox from '../../components/AskAiSearchBox';
 
 export default function Dashboard() {
   const today = new Date();
@@ -73,6 +74,8 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboardData();
   }, [selectedHostelId]);
+
+  useAutoSync(fetchDashboardData, { enableSocket: false });
 
   // Real-time WebSocket listener: auto-refresh metrics without page reload
   useEffect(() => {
@@ -174,45 +177,30 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Ask AI Command & Assistant Chatbox (Placed in Header) */}
-        <div className="relative w-full sm:w-auto sm:min-w-[320px] md:min-w-[360px] lg:min-w-[400px]">
-          <form 
-            onSubmit={handleAssistantSubmit}
-            className="rounded-xl bg-card border border-border/80 shadow-sm flex items-center px-3 py-1.5 focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all"
-          >
-            <div className="p-1 rounded-lg bg-primary/10 text-primary mr-2 shrink-0">
-              <Sparkles className="h-3.5 w-3.5" />
-            </div>
-            <input 
-              type="text" 
-              placeholder="Ask AI: 'Vacant beds', 'Pending rent'..."
-              value={assistantQuery}
-              onChange={(e) => setAssistantQuery(e.target.value)}
-              className="flex-1 bg-transparent border-0 outline-none text-xs text-foreground placeholder:text-muted-foreground focus:ring-0 min-w-0"
-            />
-            <Button type="submit" size="sm" className="rounded-lg h-7 px-3 text-xs font-semibold gap-1.5 shrink-0 ml-1.5">
-              <span>Ask</span>
-              <Send className="h-2.5 w-2.5" />
-            </Button>
-          </form>
-
-          {assistantReply && (
-            <div className="absolute right-0 top-full mt-2 z-50 bg-popover text-popover-foreground border border-border/80 p-3 rounded-xl shadow-xl text-xs font-medium w-full sm:w-80 animate-in slide-in-from-top-1">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-primary font-bold text-xs">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>AI Assistant</span>
-                </div>
-                <button 
-                  onClick={() => setAssistantReply(null)}
-                  className="text-muted-foreground hover:text-foreground text-xs p-0.5"
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="mt-1 text-muted-foreground text-xs leading-relaxed">{assistantReply}</p>
-            </div>
-          )}
+        {/* Ask AI & Search Box */}
+        <div className="relative w-full sm:w-auto sm:min-w-[320px] md:min-w-[360px] lg:min-w-[420px]">
+          <AskAiSearchBox
+            placeholder="Ask AI or search: 'Vacant beds', 'Pending rent', residents..."
+            context="dashboard"
+            onSubmit={(query) => {
+              if (!query) return;
+              const lower = query.toLowerCase();
+              if (lower.includes('rent') || lower.includes('pending') || lower.includes('due') || lower.includes('money')) {
+                navigate('/rent');
+              } else if (lower.includes('vacant') || lower.includes('empty') || lower.includes('room') || lower.includes('bed')) {
+                navigate('/rooms');
+              } else if (lower.includes('meter') || lower.includes('electricity') || lower.includes('light')) {
+                navigate('/electricity');
+              } else if (lower.includes('add tenant') || lower.includes('new tenant') || lower.includes('enroll') || lower.includes('register')) {
+                navigate('/tenants/add');
+              } else if (lower.includes('expense') || lower.includes('bill') || lower.includes('cost')) {
+                navigate('/expenses');
+              } else {
+                navigate(`/tenants?search=${encodeURIComponent(query)}`);
+              }
+            }}
+            className="w-full"
+          />
         </div>
       </div>
 
